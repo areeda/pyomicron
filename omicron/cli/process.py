@@ -1069,6 +1069,10 @@ def main(args=None):
                                             '|| HoldReasonCode =?= 46) && (JobStatus == 5)')
     ojob.add_condor_cmd('allowed_job_duration', 3 * 3600)
     ojob.add_condor_cmd('periodic_remove', '(JobStatus == 1) && MemoryUsage >= 7G')
+    # let condor manage scitokens
+    ojob.add_condor_cmd("use_oauth_services", "igwn")
+    ojob.add_condor_cmd("igwn_oauth_permissions", "read:/ligo read:/virgo")
+    ojob.add_condor_cmd("environment", "BEARER_TOKEN_FILE=$$(CondorScratchDir)/.condor_creds/igwn.use")
 
     ojob.add_condor_cmd('+OmicronProcess', f'"{group}"')
 
