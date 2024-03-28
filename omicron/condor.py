@@ -544,8 +544,8 @@ class OmicronProcessJob(pipeline.CondorDAGJob):
     logtag = '$(cluster)-$(process)'
 
     def __init__(self, universe, executable, tag=None, subdir=None,
-                 logdir=None, request_memory=4000, **cmds):
-        pipeline.CondorDAGJob.__init__(self, universe, executable)
+                 logdir=None, request_memory=4000, use_conda=False, **cmds):
+        pipeline.CondorDAGJob.__init__(self, universe, executable, use_conda=use_conda)
         if tag is None:
             tag = os.path.basename(os.path.splitext(executable)[0])
         if subdir:
@@ -567,6 +567,10 @@ class OmicronProcessJob(pipeline.CondorDAGJob):
                 self.add_condor_cmd(key, val)
         # add sub-command option
         self._command = None
+        # if we run in a Conda environment it's more complicated
+        self.use_conda = use_conda
+        if use_conda:
+
 
     def add_opt(self, opt, value=''):
         pipeline.CondorDAGJob.add_opt(self, opt, str(value))

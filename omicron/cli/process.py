@@ -93,6 +93,8 @@ try:
 except RuntimeError:
     OMICRON_PATH = None
 
+CONDA_ENVIRONMENT = os.getenv('CONDA_DEFAULT_ENV', 'ligo-omicron-3.10')
+
 DAG_TAG = "omicron"
 
 logger = log.Logger('omicron-process')
@@ -215,7 +217,18 @@ https://pyomicron.readthedocs.io/en/latest/"""
         '-f',
         '--config-file',
         default=const.OMICRON_CHANNELS_FILE,
-        help='path to configuration file (default: %(default)s)',
+
+
+            help='path to configuration file for omicron program(default: %(default)s)',
+    )
+    parser.add_argument(
+        '--process-config',
+        help='path to configuration file for omicron-process (this program) use '
+             '--print-process-config to see default for easy editing or verify current',
+    )
+    parser.add_argument(
+        '--print-process-config',
+        help='print default or current process configration for easy editing',
     )
     parser.add_argument(
         '-i',
@@ -327,6 +340,13 @@ https://pyomicron.readthedocs.io/en/latest/"""
         default=OMICRON_PATH,
         help='omicron executable (default: %(default)s)',
     )
+
+    condorg.add_argument(
+        '--environment',
+        default=CONDA_ENVIRONMENT,
+        help='Conda environment for htCondor jobs (default: %(default)s)',
+    )
+
     condorg.add_argument(
         '--condor-retry',
         type=int,
@@ -375,7 +395,7 @@ https://pyomicron.readthedocs.io/en/latest/"""
         '--dagman-option',
         action='append',
         type=str,
-        default=['force', '-import_env'],
+        default=['force', 'import_env'],    # NB: do not include leading dashes. It's done be dag launcher
         metavar="\"opt | opt=value\"",
         help="Extra options to pass to condor_submit_dag as "
              "\"-{opt} [{value}]\". "
