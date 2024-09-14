@@ -1074,7 +1074,8 @@ def main(args=None):
         pardir = gettempdir()
     parfile, jobfiles = oconfig.write_distributed(
         pardir, nchannels=args.max_channels_per_job)
-    logger.debug(f"Created master parameters file\n{parfile}")
+    logger.debug(f"Created master parameters file\n{parfile} and {len(jobfiles)} job files")
+
     if newdag:
         keepfiles.append(parfile)
 
