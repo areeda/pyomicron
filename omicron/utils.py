@@ -147,3 +147,17 @@ def deltat_to_hr(dt):
         ret += f' - {day}  {time_str}'
 
     return ret
+
+
+def write_segfile(segs, outfile):
+    """
+    write a segment list to a file with human readable string
+    @param SegList segs: segment list
+    @param Path|str outfile: path to output file
+    @return:  None
+    """
+    with open(outfile, 'w') as f:
+        print('# seg   start   stop    duration', file=f)
+        for seg in segs:
+            print(f'# {gps_to_hr(seg[0])} {gps_to_hr(seg[1])}  {deltat_to_hr(abs(seg))}', file=f)
+            print(f'{seg[0]} {seg[1]}  {abs(seg)}', file=f)

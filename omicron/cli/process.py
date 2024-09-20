@@ -64,7 +64,7 @@ import traceback
 from omicron_utils.conda_fns import get_conda_run
 from omicron_utils.omicron_config import OmicronConfig
 
-from omicron.utils import gps_to_hr, deltat_to_hr
+from omicron.utils import gps_to_hr, deltat_to_hr, write_segfile
 
 prog_start = time.time()
 
@@ -1213,7 +1213,7 @@ def main(args=None):
         archive_script = condir / "archive.sh"
         archivejob.add_arg(str(archive_script))
 
-        archivejob.add_condor_cmd('+OmicronPostProcess', '"%s"' % group)
+        archivejob.add_condor_cmd('my.OmicronPostProcess.archive', '"%s"' % group)
         archivefiles = {}
     else:
         archivejob = None
@@ -1245,6 +1245,7 @@ def main(args=None):
                     # build node
                     node = pipeline.CondorDAGNode(ojob)
                     node.set_category('omicron')
+                    node.set_name(f'Omicron_{len(omicron_nodes):03d}')
                     node.set_retry(args.condor_retry)
                     node.add_var_arg(str(subseg[0]))
                     node.add_var_arg(str(subseg[1]))
@@ -1353,6 +1354,7 @@ def main(args=None):
                 if not args.skip_omicron:
                     for node in nodes:
                         ppnode.add_parent(node)
+                ppnode.set_name(f'post_process_merge_{len(ppnodes):02d}')
                 dag.add_node(ppnode)
                 ppnodes.append(ppnode)
                 tempfiles.append(script)
@@ -1407,6 +1409,7 @@ def main(args=None):
             archivenode.add_parent(node)
         archivenode.set_retry(args.condor_retry)
         archivenode.set_category('archive')
+        archivenode.set_name('archive')
         dag.add_node(archivenode)
         tempfiles.append(archive_script)
 
@@ -1431,6 +1434,7 @@ def main(args=None):
         tempfiles.append(rmscript)
         rmnode.set_category('postprocessing')
     if rmnode:
+        rmnode.set_name('rm_files')
         # set parents for removing files
         if args.archive:  # run this after archiving
             rmnode.add_parent(archivenode)
@@ -1457,7 +1461,7 @@ def main(args=None):
 
     if args.no_submit:
         if newdag:
-            segments.write_segments(span, segfile)
+            write_segfile(span, segfile)
             logger.info("Segments written to\n%s" % segfile)
         logger.info(f"Elapsed: {time.time() - prog_start:.1f} seconds ")
         sys.exit(0)
