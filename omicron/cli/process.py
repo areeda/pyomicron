@@ -58,13 +58,14 @@ The output of `omicron-process` is a Directed Acyclic Graph (DAG) that is
 *automatically* submitted to condor for processing.
 
 """
+import logging
 import time
 import traceback
 
 from omicron_utils.conda_fns import get_conda_run
 from omicron_utils.omicron_config import OmicronConfig
 
-from omicron.utils import gps_to_hr, deltat_to_hr, write_segfile
+from omicron.utils import gps_to_hr, deltat_to_hr
 
 prog_start = time.time()
 
@@ -82,6 +83,8 @@ from pathlib import Path
 from subprocess import check_call
 from tempfile import gettempdir
 from time import sleep
+
+import gwpy.time
 from glue import pipeline
 
 from gwpy.io.cache import read_cache
@@ -98,10 +101,12 @@ except RuntimeError:
 
 DAG_TAG = "omicron"
 
-
 logger = log.Logger('omicron-process')
+old_level = logger.getEffectiveLevel()
+logger.setLevel(logging.CRITICAL)
 omicron_config = OmicronConfig(logger=logger)
 config = omicron_config.get_config()
+logger.setLevel(old_level)
 
 
 def clean_exit(exitcode, tempfiles=None):
@@ -299,6 +304,9 @@ https://pyomicron.readthedocs.io/en/latest/
     procg.add_argument('--max-online-lookback', type=int, default=30 * 60,
                        help='With no immediately previous run, or one that was long ago this is the max time of an '
                             'online job. Default: %(default)d')
+    # max concurrent omicron jobs
+    procg.add_argument('--max-concurrent', default=64, type=int,
+                       help='Max omicron jobs run at one time [%(default)s]')
     procg.add_argument(
         '-x',
         '--exclude-channel',
@@ -1074,8 +1082,7 @@ def main(args=None):
         pardir = gettempdir()
     parfile, jobfiles = oconfig.write_distributed(
         pardir, nchannels=args.max_channels_per_job)
-    logger.debug(f"Created master parameters file\n{parfile} and {len(jobfiles)} job files")
-
+    logger.debug(f"Created master parameters file\n{parfile}")
     if newdag:
         keepfiles.append(parfile)
 
@@ -1088,7 +1095,7 @@ def main(args=None):
         "accounting_group": args.condor_accounting_group,
         "accounting_group_user": args.condor_accounting_group_user,
         "request_disk": args.condor_request_disk,
-        "request_memory": '1024',
+        "request_memory": '1024',   # units are MB but  cannot be specified here
     }
     condor_igwn_auth = {
         # scitokens needed for dqsegdb
@@ -1213,7 +1220,7 @@ def main(args=None):
         archive_script = condir / "archive.sh"
         archivejob.add_arg(str(archive_script))
 
-        archivejob.add_condor_cmd('my.OmicronPostProcess.archive', '"%s"' % group)
+        archivejob.add_condor_cmd('+OmicronPostProcess', '"%s"' % group)
         archivefiles = {}
     else:
         archivejob = None
@@ -1245,7 +1252,6 @@ def main(args=None):
                     # build node
                     node = pipeline.CondorDAGNode(ojob)
                     node.set_category('omicron')
-                    node.set_name(f'Omicron_{len(omicron_nodes):03d}')
                     node.set_retry(args.condor_retry)
                     node.add_var_arg(str(subseg[0]))
                     node.add_var_arg(str(subseg[1]))
@@ -1354,7 +1360,6 @@ def main(args=None):
                 if not args.skip_omicron:
                     for node in nodes:
                         ppnode.add_parent(node)
-                ppnode.set_name(f'post_process_merge_{len(ppnodes):02d}')
                 dag.add_node(ppnode)
                 ppnodes.append(ppnode)
                 tempfiles.append(script)
@@ -1409,7 +1414,6 @@ def main(args=None):
             archivenode.add_parent(node)
         archivenode.set_retry(args.condor_retry)
         archivenode.set_category('archive')
-        archivenode.set_name('archive')
         dag.add_node(archivenode)
         tempfiles.append(archive_script)
 
@@ -1434,7 +1438,6 @@ def main(args=None):
         tempfiles.append(rmscript)
         rmnode.set_category('postprocessing')
     if rmnode:
-        rmnode.set_name('rm_files')
         # set parents for removing files
         if args.archive:  # run this after archiving
             rmnode.add_parent(archivenode)
@@ -1461,7 +1464,7 @@ def main(args=None):
 
     if args.no_submit:
         if newdag:
-            write_segfile(span, segfile)
+            segments.write_segments(span, segfile)
             logger.info("Segments written to\n%s" % segfile)
         logger.info(f"Elapsed: {time.time() - prog_start:.1f} seconds ")
         sys.exit(0)
