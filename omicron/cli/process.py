@@ -65,7 +65,7 @@ import traceback
 from omicron_utils.conda_fns import get_conda_run
 from omicron_utils.omicron_config import OmicronConfig
 
-from omicron.utils import gps_to_hr, deltat_to_hr
+from omicron.utils import gps_to_hr, deltat_to_hr, write_segfile
 
 prog_start = time.time()
 
@@ -83,8 +83,6 @@ from pathlib import Path
 from subprocess import check_call
 from tempfile import gettempdir
 from time import sleep
-
-import gwpy.time
 from glue import pipeline
 
 from gwpy.io.cache import read_cache
@@ -102,6 +100,7 @@ except RuntimeError:
 DAG_TAG = "omicron"
 
 logger = log.Logger('omicron-process')
+# the OmicronOnfig class cannot  accept a log message so only  critical errors
 old_level = logger.getEffectiveLevel()
 logger.setLevel(logging.CRITICAL)
 omicron_config = OmicronConfig(logger=logger)
@@ -258,10 +257,11 @@ https://pyomicron.readthedocs.io/en/latest/
 
     # options for file writing
     outg = parser.add_argument_group('Output options')
+
     outg.add_argument(
         '-o',
         '--output-dir',
-        default=Path.cwd(),
+        default=Path.home() / 'omicron' / 'output',
         type=Path,
         help='path to output directory (default: %(default)s)',
     )
@@ -280,33 +280,44 @@ https://pyomicron.readthedocs.io/en/latest/
         help='additional file tag to be appended to final '
         'file descriptions',
     )
-    outg.add_argument('-l', '--log-file', type=Path, help="save a copy of all logger messages to this file")
+    outg.add_argument('-l', '--log-file', type=Path,
+                      help="save a copy of all logger messages to this file, "
+                           "default: omicron-process.log in output directory ")
 
     # data processing/chunking options
     procg = parser.add_argument_group('Processing options')
 
+    if config.has_option('process', 'max_chunks_per_job'):
+        default_max_chunks_per_job = int(config['process']['max_chunks_per_job'])
+    else:
+        default_max_chunks_per_job = 4
     procg.add_argument(
         '-C',
         '--max-chunks-per-job',
         type=int,
-        default=4,
+        default=default_max_chunks_per_job,
         help='maximum number of chunks to process in a single '
         'condor job (default: %(default)s)',
     )
+    if config.has_option('process', 'max_channels_per_job'):
+        default_max_channels_per_job = int(config['process']['max_channels_per_job'])
+    else:
+        default_max_channels_per_job = 30 * 60
     procg.add_argument(
         '-N',
         '--max-channels-per-job',
         type=int,
-        default=20,
+        default=default_max_channels_per_job,
         help='maximum number of channels to process in a single '
         'condor job (default: %(default)s)',
     )
-    procg.add_argument('--max-online-lookback', type=int, default=30 * 60,
+    if config.has_option('process', 'max_lookback'):
+        default_max_lookback = int(config['process']['max_lookback'])
+    else:
+        default_max_lookback = 30 * 60
+    procg.add_argument('--max-online-lookback', type=int, default=default_max_lookback,
                        help='With no immediately previous run, or one that was long ago this is the max time of an '
                             'online job. Default: %(default)d')
-    # max concurrent omicron jobs
-    procg.add_argument('--max-concurrent', default=64, type=int,
-                       help='Max omicron jobs run at one time [%(default)s]')
     procg.add_argument(
         '-x',
         '--exclude-channel',
@@ -363,14 +374,22 @@ https://pyomicron.readthedocs.io/en/latest/
     condorg.add_argument('--conda-env', default=conda_env,
                          help='conda environment (name or path) for all programs in DAG [%(default)s]')
 
+    if config.has_option('condor', 'condor_retry'):
+        default_condor_retry = config['condor']['condor_retry']
+    else:
+        default_condor_retry = 2
     condorg.add_argument(
         '--condor-retry',
         type=int,
-        default=2,
+        default=default_condor_retry,
         help='number of times to retry each job if failed '
              '(default: %(default)s)',
     )
-    condorg.add_argument('--max-concurrent', default=64, type=int,
+    if config.has_option('condor', 'max_concurrent'):
+        default_max_concurrent = config['condor']['max_concurrent']
+    else:
+        default_max_concurrent = 64
+    condorg.add_argument('--max-concurrent', default=default_max_concurrent, type=int,
                          help='Max omicron jobs run at one time [%(default)s]')
 
     condorg.add_argument(
@@ -387,9 +406,14 @@ https://pyomicron.readthedocs.io/en/latest/
         help='accounting_group_user for condor submission on the '
         'LIGO Data Grid (default: %(default)s)',
     )
+
+    if config.has_option('process', 'condor_request_disk'):
+        default_condor_request_disk = config['process']['condor_request_disk']
+    else:
+        default_condor_request_disk = '20G'
     condorg.add_argument(
         '--condor-request-disk',
-        default='20G',
+        default=default_condor_request_disk,
         help='Required LIGO argument: local disk use (default: %(default)s)',
     )
     condorg.add_argument(
@@ -973,6 +997,7 @@ def main(args=None):
     dataspan = type(segs)([segments.Segment(datastart, dataend)])
 
     # -- find the frames
+    fr_start = time.time()
     # find frames under /dev/shm (which creates a cache of temporary files)
     if args.cache_file:
         cache = read_cache(str(args.cache_file))
@@ -986,6 +1011,8 @@ def main(args=None):
     else:
         cache = data.find_frames(ifo, frametype, datastart, dataend,
                                  on_gaps='warn')
+    fr_get_time = time.time() - fr_start
+    logger.info(f"Frame retrieval returned {len(cache)} files and took {fr_get_time:.2f}s")
 
     # if not frames for an online run, panic
     if not online and len(cache) == 0:
@@ -1082,7 +1109,8 @@ def main(args=None):
         pardir = gettempdir()
     parfile, jobfiles = oconfig.write_distributed(
         pardir, nchannels=args.max_channels_per_job)
-    logger.debug(f"Created master parameters file\n{parfile}")
+    logger.debug(f"Created master parameters file\n{parfile} and {len(jobfiles)} job files")
+
     if newdag:
         keepfiles.append(parfile)
 
@@ -1151,6 +1179,7 @@ def main(args=None):
     ojob.add_condor_cmd('request_memory', f'ifthenelse(isUndefined(MemoryUsage), {reqmem}, int(3*MemoryUsage))')
     ojob.add_condor_cmd('periodic_release', '(HoldReasonCode =?= 26 || HoldReasonCode =?= 34) '
                                             ' && (JobStatus == 5) && (time() - EnteredCurrentStatus > 10)')
+
     ojob.add_condor_cmd('allowed_job_duration', 3 * 3600)
     ojob.add_condor_cmd('periodic_remove', '(JobStatus == 1 && MemoryUsage >= 7000 || (HoldReasonCode =?= 46 ))')
     ojob.add_condor_cmd('allowed_job_duration', 3 * 3600)
@@ -1220,8 +1249,7 @@ def main(args=None):
         archive_script = condir / "archive.sh"
         archivejob.add_arg(str(archive_script))
 
-        archivejob.add_condor_cmd('+OmicronPostProcess', '"%s"' % group)
-        archivefiles = {}
+        archivejob.add_condor_cmd('my.OmicronPostProcess_archive', f'{group}')
     else:
         archivejob = None
 
@@ -1233,7 +1261,6 @@ def main(args=None):
         # build trigger segment
         ts = s + padding
         te = e - padding
-        td = te - ts
 
         # distribute segment across multiple nodes
         nodesegs = oconfig.distribute_segment(
@@ -1245,13 +1272,14 @@ def main(args=None):
             chanlist = jobfiles[pf]
             nodes = []
             # loop over distributed segments
-            for subseg in nodesegs:
+            for j, subseg in enumerate(nodesegs):
                 if not args.skip_omicron:
                     # work out files for this job
                     nodefiles = oconfig.output_files(*subseg)
                     # build node
                     node = pipeline.CondorDAGNode(ojob)
                     node.set_category('omicron')
+                    node.set_name(f'Omicron_{len(omicron_nodes):03d}')
                     node.set_retry(args.condor_retry)
                     node.add_var_arg(str(subseg[0]))
                     node.add_var_arg(str(subseg[1]))
@@ -1272,9 +1300,6 @@ def main(args=None):
 
                     for chan in chanlist:
                         for form, flist in nodefiles[chan].items():
-                            # record file as output from this node
-                            for f in flist:
-                                node._CondorDAGNode__output_files.append(f)
                             # record file as output for this channel
                             try:
                                 omicronfiles[chan][form].extend(flist)
@@ -1300,17 +1325,12 @@ def main(args=None):
                     operations.append('\n# %s' % c)
 
                     # work out filenames for coalesced files
-                    archpath = Path(io.get_archive_filename(
-                        c, ts, td, filetag=afiletag, ext='root',
-                    ))
+                    # archpath = Path(io.get_archive_filename(c, ts, td, filetag=afiletag, ext='root',))
                     mergepath = str(mergedir / c)
-                    target = str(archpath.parent)
 
                     # add ROOT operations
                     if 'root' in fileformats:
                         rootfiles = ' '.join(omicronfiles[c]['root'])
-                        for f in omicronfiles[c]['root']:
-                            ppnode.add_input_file(f)
                         no_merge = '--no-merge' if args.skip_root_merge else ''
 
                         operations.append(f'  {conda_run_prefix} {prog_path["omicron-merge"]} {no_merge}  '
@@ -1320,8 +1340,6 @@ def main(args=None):
                     # add HDF5 operations
                     if 'hdf5' in fileformats:
                         hdf5files = ' '.join(omicronfiles[c]['hdf5'])
-                        for f in omicronfiles[c]['hdf5']:
-                            ppnode.add_input_file(f)
                         no_merge = '--no-merge' if args.skip_hdf5_merge else ''
 
                         operations.append(
@@ -1332,8 +1350,6 @@ def main(args=None):
                     # add LIGO_LW operations
                     if 'xml' in fileformats:
                         xmlfiles = ' '.join(omicronfiles[c]['xml'])
-                        for f in omicronfiles[c]['xml']:
-                            ppnode.add_input_file(f)
 
                         no_merge = '--no-merge' if args.skip_ligolw_add else ''
                         no_gzip = '--no-gzip' if args.skip_gzip else ''
@@ -1343,23 +1359,12 @@ def main(args=None):
 
                         rmfiles.append(xmlfiles)
 
-                    # add ASCII operations
-                    if 'txt' in fileformats:
-                        txtfiles = ' '.join(omicronfiles[c]['txt'])
-                        for f in omicronfiles[c]['txt']:
-                            ppnode.add_input_file(f)
-                        if args.archive:
-                            try:
-                                archivefiles[target].append(txtfiles)
-                            except KeyError:
-                                archivefiles[target] = [txtfiles]
-                            rmfiles.append(txtfiles)
-
                 ppnode.set_category('postprocessing')
                 ppnode.set_retry(str(args.condor_retry))
                 if not args.skip_omicron:
                     for node in nodes:
                         ppnode.add_parent(node)
+                ppnode.set_name(f'post_process_merge_{len(ppnodes):02d}')
                 dag.add_node(ppnode)
                 ppnodes.append(ppnode)
                 tempfiles.append(script)
@@ -1414,6 +1419,7 @@ def main(args=None):
             archivenode.add_parent(node)
         archivenode.set_retry(args.condor_retry)
         archivenode.set_category('archive')
+        archivenode.set_name('archive')
         dag.add_node(archivenode)
         tempfiles.append(archive_script)
 
@@ -1438,6 +1444,7 @@ def main(args=None):
         tempfiles.append(rmscript)
         rmnode.set_category('postprocessing')
     if rmnode:
+        rmnode.set_name('rm_files')
         # set parents for removing files
         if args.archive:  # run this after archiving
             rmnode.add_parent(archivenode)
@@ -1464,7 +1471,7 @@ def main(args=None):
 
     if args.no_submit:
         if newdag:
-            segments.write_segments(span, segfile)
+            write_segfile(span, segfile)
             logger.info("Segments written to\n%s" % segfile)
         logger.info(f"Elapsed: {time.time() - prog_start:.1f} seconds ")
         sys.exit(0)

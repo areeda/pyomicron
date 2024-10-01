@@ -28,6 +28,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import gwdatafind
+from gpstime import tconvert
 from gwdatafind.utils import (filename_metadata, file_segment)
 
 from ligo.segments import (segment as Segment, segmentlist as SegmentList)
@@ -214,8 +215,12 @@ def _find_frames_datafind(obs, frametype, start, end, **kwargs):
     except IndexError:  # no frames, `cache` is list()
         latestgps = start
     else:
-        cache.extend(_find_more_files(latest))
-        latestgps = file_segment(cache[-1])[1]
+        # only do this if we are processing close to current time NOT if filling old gaps
+        if tconvert() - end < 1200:
+            cache.extend(_find_more_files(latest))
+            latestgps = file_segment(cache[-1])[1]
+        else:
+            latestgps = end
 
     # if we're searching for aggregated h(t), find more files
     # for the equivalent short h(t) type:
