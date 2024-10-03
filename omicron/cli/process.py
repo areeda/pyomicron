@@ -817,7 +817,8 @@ def main(args=None):
         frame_age = deltat_to_hr(int(now - end))
         logger.info(f'Last available frame data: {gps_to_hr(end)} age: {frame_age}')
 
-        earliest_online = now - max_lookback
+        lookback = max(int(chunkdur*2.5), max_lookback)
+        earliest_online = end - lookback
         try:  # start from where we got to last time
             last_run_segment = segments.get_last_run_segment(segfile)
             start = last_run_segment[1]
@@ -863,9 +864,7 @@ def main(args=None):
 
     logger.info(f'Processing segment determined as: {gps_to_hr(datastart)} - {gps_to_hr(dataend)}')
     dur_str = deltat_to_hr(dataduration)
-    logger.info(f"Duration = {dataduration} - {dur_str}")
-
-    span = (start, end)
+    logger.info(f"Duration = {dur_str}")
 
     # -- find segments and frame files ----------------------------------------
 
@@ -937,14 +936,14 @@ def main(args=None):
         logger.info('Get segments from frame availability')
         fa_qry_strt = time.time()
         segs = segments.get_frame_segments(ifo, frametype, datastart, dataend)
-        logger.info(f'Frame availability query took {time.time() - fa_qry_strt}s')
+        logger.info(f'Frame availability query took {(time.time() - fa_qry_strt):.2f}s')
 
     # print frame segments recovered
     if len(segs):
         logger.info("State/frame segments recovered as")
         for seg in segs:
             logger.info(f"    {gps_to_hr(seg[0])} {gps_to_hr(seg[1])} [{abs(seg)}]")
-        logger.info("Duration = %d seconds" % abs(segs))
+        logger.info(f"Duration = {gps_to_hr(abs(segs))}")
 
     # if running online, we want to avoid processing up to the extent of
     # available data, so that the next run doesn't get left with a segment that
