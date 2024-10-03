@@ -623,7 +623,7 @@ def main(args=None):
     # -- parse configuration file and get parameters --------------------------
     config_path = Path(args.config_file)
     if not config_path.is_file():
-        logger.critical(f'Configuration file : {str(config_path.absolute())} does not exsit')
+        raise FileExistsError(f'Configuration file : {str(config_path.absolute())} does not exsit')
 
     cp = configparser.ConfigParser()
     cp.read(args.config_file)
