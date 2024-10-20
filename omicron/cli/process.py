@@ -88,7 +88,7 @@ from glue import pipeline
 from gwpy.io.cache import read_cache
 from gwpy.time import to_gps, tconvert
 
-from .. import (const, segments, log, data, parameters, utils, condor, io, __version__)
+from .. import (const, segments, log, data, parameters, utils, condor, __version__)
 
 __author__ = 'Duncan Macleod <duncan.macleod@ligo.org>'
 
@@ -100,7 +100,7 @@ except RuntimeError:
 DAG_TAG = "omicron"
 
 logger = log.Logger('omicron-process')
-# the OmicronOnfig class cannot  accept a log message so only  critical errors
+# the OmicronConfig class cannot  accept a log message so only  critical errors
 old_level = logger.getEffectiveLevel()
 logger.setLevel(logging.CRITICAL)
 omicron_config = OmicronConfig(logger=logger)
@@ -596,7 +596,6 @@ def main(args=None):
         filetag = f'_{filetag}'
     else:
         filetag = ''
-        afiletag = const.OMICRON_FILETAG.upper()
 
     logger.info("--- Welcome to the Omicron processor ---")
 
@@ -734,6 +733,7 @@ def main(args=None):
         logger.debug(f"State frametype {stateft}")
 
     # parse padding for state segments
+    statepad = (4, 4)
     if statechannel or stateflag:
         try:
             statepad = cp.get(group, 'state-padding')
@@ -817,7 +817,7 @@ def main(args=None):
         frame_age = deltat_to_hr(int(now - end))
         logger.info(f'Last available frame data: {gps_to_hr(end)} age: {frame_age}')
 
-        lookback = max(int(chunkdur*2.5), max_lookback)
+        lookback = max(int(chunkdur * 2.5), max_lookback)
         earliest_online = end - lookback
         try:  # start from where we got to last time
             last_run_segment = segments.get_last_run_segment(segfile)
@@ -886,15 +886,22 @@ def main(args=None):
         raise ValueError(ermsg)
 
     # -- find run segments
-    # decide whether to use dqsegdb or a state/guardian channel in raw frame
-    if args.no_segdb and statechannel:
-        use_segdb = False
-    elif (online and statechannel) or (statechannel and not stateflag) and dataduration < 750:
-        use_segdb = False
+    # decide how determine segments to process
+    # No stateflag (dq segment name) process all data in interval
+    # online, short duration, near current time use guardian  channel in raw frame
+    # use dqsgdb
+    max_guardian = int(config['process']['max_guardian']) if config.has_option('process', 'max_guardian') else 600
+    if stateflag is None:
+        seg_method = 'frames'
+    elif (statechannel is not None) and dataduration < max_guardian:
+        seg_method = 'guardian'
+    elif stateflag is not None:
+        seg_method = 'dqsegdb'
     else:
-        use_segdb = True
+        seg_method = 'frames'
+
     # get segments from state vector
-    if use_segdb:
+    if seg_method == 'guardian':
         logger.info(f'Finding segments for relevant state...  from:{datastart} length: {dataduration}s')
         logger.debug(f'For segment finding: online: {online}, statechannel: {statechannel}, '
                      f'stateflag: {stateflag} args.no_segdb: {args.no_segdb}')
@@ -922,7 +929,7 @@ def main(args=None):
         logger.info(f'State query took {time.time() - seg_qry_strt:.2f}s')
 
     # get segments from segment database
-    elif stateflag:
+    elif seg_method == 'dqsegdb':
         logger.info(f'Querying segment database for relevant state: {stateflag} from:{datastart} length:'
                     f' {dataduration}s {deltat_to_hr(dataduration)}')
         seg_qry_strt = time.time()
@@ -930,20 +937,21 @@ def main(args=None):
                                              pad=statepad)
         logger.info(f'Segment query took {time.time() - seg_qry_strt:.2f}s')
 
-    # Get segments from frame cache
-    elif args.cache_file:
-        logger.info('Get segments from cache')
-        cache = read_cache(str(args.cache_file))
-        cache_segs = segments.cache_segments(cache)
-        srch_span = SegmentList([Segment(datastart, dataend)])
-        segs = cache_segs & srch_span
+    elif seg_method == 'frames':
+        # Get segments from frame cache
+        if args.cache_file:
+            logger.info('Get segments from cache')
+            cache = read_cache(str(args.cache_file))
+            cache_segs = segments.cache_segments(cache)
+            srch_span = SegmentList([Segment(datastart, dataend)])
+            segs = cache_segs & srch_span
 
-    # get segments from frame availability
-    else:
-        logger.info('Get segments from frame availability')
-        fa_qry_strt = time.time()
-        segs = segments.get_frame_segments(ifo, frametype, datastart, dataend)
-        logger.info(f'Frame availability query took {(time.time() - fa_qry_strt):.2f}s')
+        # get segments from frame availability
+        else:
+            logger.info('Get segments from frame availability')
+            fa_qry_strt = time.time()
+            segs = segments.get_frame_segments(ifo, frametype, datastart, dataend)
+            logger.info(f'Frame availability query took {(time.time() - fa_qry_strt):.2f}s')
 
     # print frame segments recovered
     if len(segs):
@@ -1263,11 +1271,6 @@ def main(args=None):
 
     # loop over data segments
     for s, e in segs:
-
-        # build trigger segment
-        ts = s + padding
-        te = e - padding
-
         # distribute segment across multiple nodes
         nodesegs = oconfig.distribute_segment(
             s, e, nperjob=args.max_chunks_per_job)
