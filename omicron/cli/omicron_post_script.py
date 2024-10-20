@@ -65,6 +65,7 @@ def parser_add_args(parser):
     parser.add_argument('--max-retry', help='condor max retry value')
     parser.add_argument('--retry', help='current try starting at 0')
     parser.add_argument('--log', help='Path for a copy of our logger output')
+    parser.add_argument('--job', help='Job name')
 
 
 def main():
@@ -109,8 +110,11 @@ def main():
     logger.info(f'--------- Running {str(me)}')
     # debugging?
     logger.debug(f'{__process_name__} version: {__version__} called with arguments:')
+    arg_str = '\n'
+
     for k, v in args.__dict__.items():
-        logger.debug('    {} = {}'.format(k, v))
+        arg_str += '    {} = {}\n'.format(k, v)
+    logger.info(arg_str)
 
     ret = int(args.return_code)
     retry = int(args.retry)

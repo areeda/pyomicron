@@ -886,8 +886,15 @@ def main(args=None):
         raise ValueError(ermsg)
 
     # -- find run segments
+    # decide whether to use dqsegdb or a state/guardian channel in raw frame
+    if args.no_segdb and statechannel:
+        use_segdb = False
+    elif (online and statechannel) or (statechannel and not stateflag) and dataduration < 750:
+        use_segdb = False
+    else:
+        use_segdb = True
     # get segments from state vector
-    if (online and statechannel) or (statechannel and not stateflag) or (statechannel and args.no_segdb):
+    if use_segdb:
         logger.info(f'Finding segments for relevant state...  from:{datastart} length: {dataduration}s')
         logger.debug(f'For segment finding: online: {online}, statechannel: {statechannel}, '
                      f'stateflag: {stateflag} args.no_segdb: {args.no_segdb}')
@@ -1293,6 +1300,8 @@ def main(args=None):
                     node.add_post_script_arg('$RETRY')
                     node.add_post_script_arg('--max-retry')
                     node.add_post_script_arg('$MAX_RETRIES')
+                    node.add_post_script_arg('--job')
+                    node.add_post_script_arg('$JOB')
                     node.add_post_script_arg('--log')
                     post_script_log_file = condir / 'post_script.log'
                     node.add_post_script_arg(str(post_script_log_file.absolute()))
