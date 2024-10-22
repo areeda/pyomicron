@@ -1047,10 +1047,12 @@ def main(args=None):
     # write cache of frames (only if creating a new DAG)
     cachefile = cachedir / "frames.lcf"
     keepfiles.append(cachefile)
-    if newdag:
+    if newdag or not cachefile.exists():
         data.write_cache(cache, cachefile)
+        logger.info("Cache of %d frames written to\n%s" % (len(cache), cachefile))
+    else:
+        logger.info("Cache of %d frames NOT written because this is not a new DAG to\n%s" % (len(cache), cachefile))
     oconfig.set('DATA', 'FFL', str(cachefile))
-    logger.info("Cache of %d frames written to\n%s" % (len(cache), cachefile))
 
     # restrict analysis to available data (and warn about missing data)
     if segs - cachesegs:
