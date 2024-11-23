@@ -1177,7 +1177,7 @@ def main(args=None):
     # create omicron job
     ojob_req_mem = config['omicron']['initial_memory'] if config.has_option('omicron', 'initial_memory') else 4096
     ojob = condor.OmicronProcessJob(args.universe, conda_exe, tag='omicron', subdir=condir,
-        logdir=logdir, request_memory=ojob_req_mem, **condorcmds)
+        logdir=logdir, **condorcmds)
     for job_arg in conda_arg_list:
         ojob.add_arg(job_arg)
 
@@ -1199,7 +1199,7 @@ def main(args=None):
 
     # create post-processing jobs
     ppmem = config['post_process']['initial_memory'] if config.has_option('post_process', 'initial_memory') else 2048
-    ppjob = condor.OmicronProcessJob(args.universe, conda_exe, request_memory=ppmem,
+    ppjob = condor.OmicronProcessJob(args.universe, conda_exe,
                                      subdir=condir, logdir=logdir,
                                      tag='post-processing', **condorcmds)
     for job_arg in conda_arg_list:
@@ -1240,7 +1240,7 @@ def main(args=None):
     if not args.skip_rm:
         rm_mem = config['clean']['initial_memory'] if config.has_option('clean', 'initial_memory') else 2048
         rmjob = condor.OmicronProcessJob(
-            args.universe, conda_exe, request_memory=rm_mem,
+            args.universe, conda_exe,
             subdir=condir, logdir=logdir, tag='post-processing-rm', **condorcmds)
         rm = shutil.which('rm')
 
@@ -1255,7 +1255,7 @@ def main(args=None):
     if args.archive:
         archive_mem = config['archive']['initial_memory'] if config.has_option('archive', 'initial_memory') else 2048
         archivejob = condor.OmicronProcessJob(
-            args.universe, conda_exe, request_memory=archive_mem,
+            args.universe, conda_exe,
             subdir=condir, logdir=logdir, tag='archive', **condorcmds)
         for job_arg in conda_arg_list:
             archivejob.add_arg(job_arg)
