@@ -106,6 +106,7 @@ logger.setLevel(logging.CRITICAL)
 omicron_config = OmicronConfig(logger=logger)
 config = omicron_config.get_config()
 logger.setLevel(old_level)
+logger.info(f'Using config: {omicron_config.path.absolute()}')
 
 
 def clean_exit(exitcode, tempfiles=None):
@@ -1139,7 +1140,6 @@ def main(args=None):
         "accounting_group": args.condor_accounting_group,
         "accounting_group_user": args.condor_accounting_group_user,
         "request_disk": args.condor_request_disk,
-        "request_memory": '1024',   # units are MB but  cannot be specified here
     }
     condor_igwn_auth = {
         # scitokens needed for dqsegdb
@@ -1175,14 +1175,9 @@ def main(args=None):
     conda_arg_list = conda_args.split()
     conda_run_prefix = conda_exe + ' ' + conda_args
     # create omicron job
-    ojob = condor.OmicronProcessJob(
-        args.universe,
-        conda_exe,
-        tag='omicron',
-        subdir=condir,
-        logdir=logdir,
-        **condorcmds,
-    )
+    ojob_req_mem = config['omicron']['initial_memory'] if config.has_option('omicron', 'initial_memory') else 4096
+    ojob = condor.OmicronProcessJob(args.universe, conda_exe, tag='omicron', subdir=condir,
+        logdir=logdir, request_memory=ojob_req_mem, **condorcmds)
     for job_arg in conda_arg_list:
         ojob.add_arg(job_arg)
 
@@ -1190,7 +1185,7 @@ def main(args=None):
 
     # This allows us to start with a memory request that works maybe 80%, but bumps it if we go over
     # we also limit individual jobs to a max runtime to cause them to be vacates to deal with NFS hanging
-    reqmem = condorcmds.pop('request_memory', 1024)
+    reqmem = condorcmds.pop('request_memory', ojob_req_mem)
     ojob.add_condor_cmd('my.InitialRequestMemory', f'{reqmem}')
     ojob.add_condor_cmd('request_memory', f'ifthenelse(isUndefined(MemoryUsage), {reqmem}, int(3*MemoryUsage))')
     ojob.add_condor_cmd('periodic_release', '(HoldReasonCode =?= 26 || HoldReasonCode =?= 34) '
@@ -1203,7 +1198,8 @@ def main(args=None):
     ojob.add_condor_cmd('my.OmicronProcess', f'"{group}"')
 
     # create post-processing jobs
-    ppjob = condor.OmicronProcessJob(args.universe, conda_exe,
+    ppmem = config['post_process']['initial_memory'] if config.has_option('post_process', 'initial_memory') else 2048
+    ppjob = condor.OmicronProcessJob(args.universe, conda_exe, request_memory=ppmem,
                                      subdir=condir, logdir=logdir,
                                      tag='post-processing', **condorcmds)
     for job_arg in conda_arg_list:
@@ -1212,7 +1208,6 @@ def main(args=None):
     ppjob.add_arg(shutil.which('bash'))
     ppjob.add_arg('-e')
     ppjob.add_condor_cmd('my.OmicronPostProcess', f'"{group}"')
-    ppmem = 1024
     ppjob.add_condor_cmd('my.InitialRequestMemory', f'{ppmem}')
     ppjob.add_condor_cmd('request_memory',
                          f'ifthenelse(isUndefined(MemoryUsage), {ppmem}, int(1.5*MemoryUsage))')
@@ -1243,8 +1238,9 @@ def main(args=None):
     # create node to remove files
     rmfiles = []
     if not args.skip_rm:
+        rm_mem = config['clean']['initial_memory'] if config.has_option('clean', 'initial_memory') else 2048
         rmjob = condor.OmicronProcessJob(
-            args.universe, conda_exe,
+            args.universe, conda_exe, request_memory=rm_mem,
             subdir=condir, logdir=logdir, tag='post-processing-rm', **condorcmds)
         rm = shutil.which('rm')
 
@@ -1253,11 +1249,13 @@ def main(args=None):
         rmscript = condir / "post-process-rm.sh"
         rmjob.add_arg(str(rmscript))
 
+        rmjob.add_condor_cmd('request_memory',f'{rm_mem}M')
         rmjob.add_condor_cmd('+OmicronPostProcess', '"%s"' % group)
 
     if args.archive:
+        archive_mem = config['archive']['initial_memory'] if config.has_option('archive', 'initial_memory') else 2048
         archivejob = condor.OmicronProcessJob(
-            args.universe, conda_exe,
+            args.universe, conda_exe, request_memory=archive_mem,
             subdir=condir, logdir=logdir, tag='archive', **condorcmds)
         for job_arg in conda_arg_list:
             archivejob.add_arg(job_arg)
@@ -1265,6 +1263,7 @@ def main(args=None):
         archive_script = condir / "archive.sh"
         archivejob.add_arg(str(archive_script))
 
+        archivejob.add_condor_cmd('request_memory', f'{archive_mem}M')
         archivejob.add_condor_cmd('my.OmicronPostProcess_archive', f'{group}')
     else:
         archivejob = None
