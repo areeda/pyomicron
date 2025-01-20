@@ -587,16 +587,16 @@ def main(args=None):
         logger.info('Online process. gps start, end determined automatically')
 
     # format file-tag as underscore-delimited upper-case string
-    filetag = args.file_tag
-    if filetag:
-        filetag = re.sub(r'[:_\s-]', '_', filetag).rstrip('_').strip('_')
-        if const.OMICRON_FILETAG.lower() in filetag.lower():
-            afiletag = filetag
-        else:
-            afiletag = f'{filetag}_{const.OMICRON_FILETAG.upper()}'
-        filetag = f'_{filetag}'
-    else:
-        filetag = ''
+    # filetag = args.file_tag
+    # if filetag:
+    #     filetag = re.sub(r'[:_\s-]', '_', filetag).rstrip('_').strip('_')
+    #     if const.OMICRON_FILETAG.lower() in filetag.lower():
+    #         afiletag = filetag
+    #     else:
+    #         afiletag = f'{filetag}_{const.OMICRON_FILETAG.upper()}'
+    #     filetag = f'_{filetag}'
+    # else:
+    #     filetag = ''
 
     logger.info("--- Welcome to the Omicron processor ---")
 
@@ -1177,7 +1177,7 @@ def main(args=None):
     # create omicron job
     ojob_req_mem = config['omicron']['initial_memory'] if config.has_option('omicron', 'initial_memory') else 4096
     ojob = condor.OmicronProcessJob(args.universe, conda_exe, tag='omicron', subdir=condir,
-        logdir=logdir, **condorcmds)
+                                    logdir=logdir, **condorcmds)
     for job_arg in conda_arg_list:
         ojob.add_arg(job_arg)
 
@@ -1249,7 +1249,7 @@ def main(args=None):
         rmscript = condir / "post-process-rm.sh"
         rmjob.add_arg(str(rmscript))
 
-        rmjob.add_condor_cmd('request_memory',f'{rm_mem}M')
+        rmjob.add_condor_cmd('request_memory', f'{rm_mem}M')
         rmjob.add_condor_cmd('+OmicronPostProcess', '"%s"' % group)
 
     if args.archive:
