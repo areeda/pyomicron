@@ -1521,21 +1521,23 @@ def main(args=None):
                 x = '-%s' % x
                 try:
                     key, val = x.split('=', 1)
-                    if key == 'batch_name':
+                    if key == '-batch-name':
                         got_batch_name = True
                         if "clusterid" not in val.lower():
-                            val += '+$(ClusterID)'
+                            val += '$(ClusterID)'
                 except ValueError:
                     dagmanargs.add(x)
                 else:
                     dagmanopts[key] = val
             if not got_batch_name:
-                key = 'batch_name'
+                key = '-batch-name'
                 onl = 'online' if online else 'offline'
                 val = f'omicron-{onl}-{group} $(ClusterID)'
                 dagmanopts[key] = val
             # confirm submit command
-            submit_dag_cmd = 'condor-submit ' + ' '.join(dagmanargs) + ' '.join(dagmanopts)
+            submit_dag_cmd = f'condor-submit {dagfile.absolute()} ' + ' '.join(dagmanargs)
+            for key, val in dagmanopts.items():
+                submit_dag_cmd += f' --{key} "{val}"'
             logger.info(f'dag submit\n{submit_dag_cmd}\n')
 
             dagid = condor.submit_dag(
