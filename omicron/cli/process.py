@@ -256,6 +256,10 @@ https://pyomicron.readthedocs.io/en/latest/
         'verbose output',
     )
 
+    parser.add_argument('--warn',
+                        action='store_true',
+                        help='Convert errors to warnings to help debug'
+                        )
     # options for file writing
     outg = parser.add_argument_group('Output options')
 
@@ -1233,7 +1237,10 @@ def main(args=None):
             logger.critical(f'required program: {exe} not found')
             goterr.append(exe)
     if goterr:
-        raise ValueError(f'Required programs not found in current environment: {", ".join(goterr)}')
+        if args.warn:
+            logger.warning(goterr)
+        else:
+            raise ValueError(f'Required programs not found in current environment: {", ".join(goterr)}')
 
     # create node to remove files
     rmfiles = []
@@ -1289,7 +1296,7 @@ def main(args=None):
                     # build node
                     node = pipeline.CondorDAGNode(ojob)
                     node.set_category('omicron')
-                    node.set_name(f'Omicron_{len(omicron_nodes):03d}')
+                    node.set_name(f'Omicron_{len(omicron_nodes):03d} $(Cluster_ID)')
                     node.set_retry(args.condor_retry)
                     node.add_var_arg(str(subseg[0]))
                     node.add_var_arg(str(subseg[1]))
@@ -1376,7 +1383,7 @@ def main(args=None):
                 if not args.skip_omicron:
                     for node in nodes:
                         ppnode.add_parent(node)
-                ppnode.set_name(f'post_process_merge_{len(ppnodes):02d}')
+                ppnode.set_name(f'post_process_merge_{len(ppnodes):02d} $(Cluster_ID)')
                 dag.add_node(ppnode)
                 ppnodes.append(ppnode)
                 tempfiles.append(script)
@@ -1431,7 +1438,7 @@ def main(args=None):
             archivenode.add_parent(node)
         archivenode.set_retry(args.condor_retry)
         archivenode.set_category('archive')
-        archivenode.set_name('archive')
+        archivenode.set_name('archive  $(Cluster_ID)')
         dag.add_node(archivenode)
         tempfiles.append(archive_script)
 
@@ -1456,7 +1463,7 @@ def main(args=None):
         tempfiles.append(rmscript)
         rmnode.set_category('postprocessing')
     if rmnode:
-        rmnode.set_name('rm_files')
+        rmnode.set_name('rm_files  $(Cluster_ID)')
         # set parents for removing files
         if args.archive:  # run this after archiving
             rmnode.add_parent(archivenode)
@@ -1504,6 +1511,7 @@ def main(args=None):
                                         OmicronDAGMan=group)['ClusterId'])
             logger.info("Found existing condor ID = %d" % dagid)
         else:  # or submit DAG
+            got_batch_name = False
             dagmanargs = set()
             if online:
                 dagmanopts = {'-append': '+OmicronDAGMan=\"%s\"' % group}
@@ -1513,10 +1521,23 @@ def main(args=None):
                 x = '-%s' % x
                 try:
                     key, val = x.split('=', 1)
+                    if key == 'batch_name':
+                        got_batch_name = True
+                        if "clusterid" not in val.lower():
+                            val += '+$(ClusterID)'
                 except ValueError:
                     dagmanargs.add(x)
                 else:
                     dagmanopts[key] = val
+            if not got_batch_name:
+                key = 'batch_name'
+                onl = 'online' if online else 'offline'
+                val = f'omicron-{onl}-{group} $(ClusterID)'
+                dagmanopts[key] = val
+            # confirm submit command
+            submit_dag_cmd = 'condor-submit ' + ' '.join(dagmanargs) + ' '.join(dagmanopts)
+            logger.info(f'dag submit\n{submit_dag_cmd}\n')
+
             dagid = condor.submit_dag(
                 str(dagfile),
                 *list(dagmanargs),
@@ -1536,6 +1557,7 @@ def main(args=None):
         logger.info(f"Monitoring DAG: {dagid} {dagfile}")
         cwq = shutil.which('condor_watch_q')
         if cwq:
+            sleep(20)       # give condor time to set up the jobs
             check_call([
                 cwq,
                 "-exit", "all,done,0",
