@@ -1564,14 +1564,17 @@ def main(args=None):
         cwq = shutil.which('condor_watch_q')
         if cwq:
             sleep(20)       # give condor time to set up the jobs
+
             if batch_name is None:
                 logger.error("Batch name not set")
-            check_call([
+            cwq_args = [
                 cwq,
                 "-exit", "all,done,0",
                 "-exit", "any,held,1",
                 "-batches", batch_name,
-            ])
+            ]
+            logger.info(f"Running condor_watch_q command:\n{' '.join(cwq_args)}")
+            check_call(cwq_args)
             print()
         else:
             logger.error('We cannot monitor condor job because condor_watch_q not in our path')
