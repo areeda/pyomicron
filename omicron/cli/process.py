@@ -1383,7 +1383,7 @@ def main(args=None):
                 if not args.skip_omicron:
                     for node in nodes:
                         ppnode.add_parent(node)
-                ppnode.set_name(f'post_process_merge_{len(ppnodes):02d} $(Cluster_ID)')
+                ppnode.set_name(f'post_process_merge_{len(ppnodes):02d}')
                 dag.add_node(ppnode)
                 ppnodes.append(ppnode)
                 tempfiles.append(script)
@@ -1438,7 +1438,7 @@ def main(args=None):
             archivenode.add_parent(node)
         archivenode.set_retry(args.condor_retry)
         archivenode.set_category('archive')
-        archivenode.set_name('archive  $(Cluster_ID)')
+        archivenode.set_name('archive ')
         dag.add_node(archivenode)
         tempfiles.append(archive_script)
 
@@ -1463,7 +1463,7 @@ def main(args=None):
         tempfiles.append(rmscript)
         rmnode.set_category('postprocessing')
     if rmnode:
-        rmnode.set_name('rm_files  $(Cluster_ID)')
+        rmnode.set_name('rm_files ')
         # set parents for removing files
         if args.archive:  # run this after archiving
             rmnode.add_parent(archivenode)
