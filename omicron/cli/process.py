@@ -1296,7 +1296,7 @@ def main(args=None):
                     # build node
                     node = pipeline.CondorDAGNode(ojob)
                     node.set_category('omicron')
-                    node.set_name(f'Omicron_{len(omicron_nodes):03d} $(Cluster_ID)')
+                    node.set_name(f'Omicron_{len(omicron_nodes):03d}')
                     node.set_retry(args.condor_retry)
                     node.add_var_arg(str(subseg[0]))
                     node.add_var_arg(str(subseg[1]))
@@ -1505,6 +1505,7 @@ def main(args=None):
     else:
         logger.info("--- Submitting DAG to condor -----------")
 
+    batch_name = None
     for i in range(args.submit_rescue_dag + 1):
         if args.reattach:  # find ID of existing DAG
             dagid = int(condor.find_job(Owner=getuser(),
@@ -1525,6 +1526,7 @@ def main(args=None):
                         got_batch_name = True
                         if "clusterid" not in val.lower():
                             val += '$(ClusterID)'
+                        batch_name = val
                 except ValueError:
                     dagmanargs.add(x)
                 else:
@@ -1534,6 +1536,8 @@ def main(args=None):
                 onl = 'online' if online else 'offline'
                 val = f'omicron-{onl}-{group} $(ClusterID)'
                 dagmanopts[key] = val
+                batch_name = val
+
             # confirm submit command
             submit_dag_cmd = f'condor-submit {dagfile.absolute()} ' + ' '.join(dagmanargs)
             for key, val in dagmanopts.items():
@@ -1560,11 +1564,13 @@ def main(args=None):
         cwq = shutil.which('condor_watch_q')
         if cwq:
             sleep(20)       # give condor time to set up the jobs
+            if batch_name is None:
+                logger.error("Batch name not set")
             check_call([
                 cwq,
                 "-exit", "all,done,0",
                 "-exit", "any,held,1",
-                "-clusters", str(dagid),
+                "-batches", batch_name,
             ])
             print()
         else:
