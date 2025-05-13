@@ -1567,6 +1567,8 @@ def main(args=None):
 
             if batch_name is None:
                 logger.error("Batch name not set")
+            else:
+                batch_name = batch_name.replace('$(ClusterID)', str(dagid))
             cwq_args = [
                 cwq,
                 "-exit", "all,done,0",
