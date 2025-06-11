@@ -449,8 +449,8 @@ https://pyomicron.readthedocs.io/en/latest/
     )
     condorg.add_argument(
         '--auth-type',
-        choices=['x509', 'igwn', 'scitoken'],
-        default='x509',
+        choices=[ 'igwn', 'scitoken'],
+        default='scitoken',
         help='How to authenticate to dqsegdb, datafind, and cvmfs'
     )
 
