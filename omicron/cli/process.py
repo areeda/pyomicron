@@ -1163,11 +1163,11 @@ def main(args=None):
         condorcmds = dict(base_condorcmds | condor_x509_auth)
     elif args.auth_type == 'igwn':
         condorcmds = dict(base_condorcmds | condor_igwn_auth)
-    elif args.auth_type == 'scitokens':
+    elif args.auth_type == 'scitoken':
         condorcmds = dict(base_condorcmds | condor_apissuer_auth)
     else:
         condorcmds = base_condorcmds.copy()
-        logger.warning('We do not know how to authenticate to dqsegdb or cvmfs')
+        logger.warning(f'We do not know how to authenticate to dqsegdb or cvmfs. auth-type: {args.auth_type}')
 
     condorcmds: dict[str, str]
 
