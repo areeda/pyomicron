@@ -20,3 +20,4 @@
 
 # setuptools-scm
 omicron/_version.py
+/.coverage

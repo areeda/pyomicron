@@ -817,8 +817,14 @@ def main(args=None):
     now = tconvert()
 
     if newdag and online:
+        logger.info("Processing a new DAG for online timespan")
         # get limit of available data (allowing for padding)
-        end = data.get_latest_data_gps(ifo, frametype) - padding
+        try:
+            end = data.get_latest_data_gps(ifo, frametype) - padding
+        except RuntimeError as re:
+            logger.error(f"datafiind cannot determine latest frame data for {ifo}:{frametype} {re}")
+            exit(1)
+
         frame_age = deltat_to_hr(int(now - end))
         logger.info(f'Last available frame data: {gps_to_hr(end)} age: {frame_age}')
 
@@ -1577,6 +1583,7 @@ def main(args=None):
             ]
             logger.info(f"Running condor_watch_q command:\n{' '.join(cwq_args)}")
             check_call(cwq_args)
+            logger.info("wait_q returned")
             print()
         else:
             logger.error('We cannot monitor condor job because condor_watch_q not in our path')
