@@ -1580,10 +1580,11 @@ def main(args=None):
                 "-exit", "all,done,0",
                 "-exit", "any,held,1",
                 "-batches", batch_name,
+                "-no-exit-on-key-press",
             ]
             logger.info(f"Running condor_watch_q command:\n{' '.join(cwq_args)}")
             check_call(cwq_args)
-            logger.info("wait_q returned")
+            logger.info("condor_watch_q returned")
             print()
         else:
             logger.error('We cannot monitor condor job because condor_watch_q not in our path')
