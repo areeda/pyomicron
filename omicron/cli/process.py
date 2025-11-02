@@ -63,6 +63,7 @@ import time
 import traceback
 
 from omicron_utils.conda_fns import get_conda_run
+from omicron_utils.condor_utils import wait_for_job
 from omicron_utils.omicron_config import OmicronConfig
 
 from omicron.utils import gps_to_hr, deltat_to_hr, write_segfile
@@ -80,7 +81,6 @@ import shutil
 import time
 from getpass import getuser
 from pathlib import Path
-from subprocess import check_call
 from tempfile import gettempdir
 from time import sleep
 from glue import pipeline
@@ -449,7 +449,7 @@ https://pyomicron.readthedocs.io/en/latest/
     )
     condorg.add_argument(
         '--auth-type',
-        choices=[ 'igwn', 'scitoken'],
+        choices=['igwn', 'scitoken'],
         default='scitoken',
         help='How to authenticate to dqsegdb, datafind, and cvmfs'
     )
@@ -875,8 +875,7 @@ def main(args=None):
 
     logger.info(f'Processing segment determined as: {gps_to_hr(datastart)} - {gps_to_hr(dataend)}')
     dur_str = deltat_to_hr(dataduration)
-    logger.info(f"Duration = {dur_str}")
-
+    logger.info(f"Request interval duration = {dur_str}")
     # -- find segments and frame files ----------------------------------------
 
     # minimum allowed duration is one full chunk
@@ -969,7 +968,7 @@ def main(args=None):
         logger.info("State/frame segments recovered as")
         for seg in segs:
             logger.info(f"    {gps_to_hr(seg[0])} {gps_to_hr(seg[1])} [{abs(seg)}]")
-        logger.info(f"Duration = {gps_to_hr(abs(segs))}")
+        logger.info(f"DQ segment duration = {deltat_to_hr(abs(segs))}")
 
     # if running online, we want to avoid processing up to the extent of
     # available data, so that the next run doesn't get left with a segment that
@@ -1114,14 +1113,14 @@ def main(args=None):
         logger.info("Final data segments selected as")
         for seg in segs:
             logger.info(f"    {gps_to_hr(seg[0])} {gps_to_hr(seg[1])} {abs(seg)}")
-        logger.info(f"Duration = {abs(segs)} seconds")
+        logger.info(f"Total DQ segment duration = {abs(segs)} seconds, {deltat_to_hr(abs(seg))}")
 
     span = type(trigsegs)([trigsegs.extent()])
 
     logger.info("This will output triggers for")
     for seg in trigsegs:
         logger.info(f"    {gps_to_hr(seg[0])} {gps_to_hr(seg[1])} {abs(seg)}")
-    logger.info(f"Duration = {abs(trigsegs)} seconds")
+    logger.info(f"Total trigger duration = {abs(trigsegs)} seconds, {deltat_to_hr(abs(seg))}")
 
     # -- config omicron config directory --------------------------------------
 
@@ -1555,7 +1554,7 @@ def main(args=None):
                 *list(dagmanargs),
                 **dagmanopts,
             )
-            logger.info("Condor ID = %d" % dagid)
+            logger.info(f"Condor DAG ID = {dagid}, name = {batch_name}, file = {dagfile}")
             # write segments now -- this means that online processing will
             # _always_ move on even if the workflow fails
             if i == 0:
@@ -1565,31 +1564,13 @@ def main(args=None):
                 args.dagman_option.pop(args.dagman_option.index('force'))
 
         # monitor the dag
-        logger.debug("----------------------------------------")
-        logger.info(f"Monitoring DAG: {dagid} {dagfile}")
-        cwq = shutil.which('condor_watch_q')
-        if cwq:
-            sleep(20)       # give condor time to set up the jobs
+        logger.info(f"Monitoring DAG: {dagid} {batch_name} {dagfile}")
 
-            if batch_name is None:
-                logger.error("Batch name not set")
-            else:
-                batch_name = batch_name.replace('$(ClusterID)', str(dagid))
-            cwq_args = [
-                cwq,
-                "-exit", "all,done,0",
-                "-exit", "any,held,1",
-                "-batches", batch_name,
-                "-no-exit-on-key-press",
-            ]
-            logger.info(f"Running condor_watch_q command:\n{' '.join(cwq_args)}")
-            check_call(cwq_args)
-            logger.info("condor_watch_q returned")
-            print()
-        else:
-            logger.error('We cannot monitor condor job because condor_watch_q not in our path')
+        sleep(20)       # give condor time to set up the jobs
 
-        logger.debug("----------------------------------------")
+        wait_for_job(str(dagid))
+
+        logger.info(f"Wait for DAG {dagid} {batch_name} ({dagfile.absolute()}) finished")
         sleep(5)
         try:
             stat = condor.get_dag_status(dagid)

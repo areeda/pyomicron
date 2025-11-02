@@ -186,7 +186,6 @@ def valid_file(path, uint_bug):
 
 
 def main():
-    global logger
 
     parser = argparse.ArgumentParser(description=__doc__,
                                      prog=__process_name__)
