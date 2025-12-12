@@ -32,7 +32,7 @@ from shutil import which
 from subprocess import (check_output, CalledProcessError)
 from time import sleep
 
-import htcondor
+import htcondor2 as htcondor
 from classad import ClassAd
 
 import numpy

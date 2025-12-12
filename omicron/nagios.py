@@ -23,7 +23,7 @@ import json as jsonlib
 import sys
 from getpass import getuser
 
-import htcondor
+import htcondor2 as htcondor
 
 from gwpy.io.cache import file_segment
 from gwpy.time import to_gps

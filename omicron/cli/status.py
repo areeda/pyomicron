@@ -36,7 +36,7 @@ from pathlib import Path
 from textwrap import indent
 from time import sleep
 
-import htcondor
+import htcondor2 as htcondor
 
 import numpy
 
