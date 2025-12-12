@@ -33,7 +33,7 @@ from subprocess import (check_output, CalledProcessError)
 from time import sleep
 
 import htcondor2 as htcondor
-from classad import ClassAd
+from classad2 import ClassAd
 
 import numpy
 
