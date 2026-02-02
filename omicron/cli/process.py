@@ -397,6 +397,15 @@ https://pyomicron.readthedocs.io/en/latest/
     condorg.add_argument('--max-concurrent', default=default_max_concurrent, type=int,
                          help='Max omicron jobs run at one time [%(default)s]')
 
+    if config.has_option('condor', 'getenv'):
+        default_getenv= config['condor']['getenv']
+    else:
+        default_getenv = None
+    condorg.add_argument('--getenv', default=default_getenv,
+                         type=str,
+                         help='Space separatee string with names of environment variables'
+                              'to pass to te jobs')
+
     condorg.add_argument(
         '--condor-accounting-group',
         default='ligo.prod.o4.detchar.transient.omicron',
@@ -1145,10 +1154,12 @@ def main(args=None):
     dag.set_dag_file(str(dagpath.with_suffix("")))
 
     # set up condor commands for all jobs
+
     base_condorcmds = {
         "accounting_group": args.condor_accounting_group,
         "accounting_group_user": args.condor_accounting_group_user,
         "request_disk": args.condor_request_disk,
+        "getenv": args.getenv,
     }
     condor_igwn_auth = {
         # scitokens needed for dqsegdb
@@ -1161,12 +1172,7 @@ def main(args=None):
     condor_apissuer_auth = {
         'use_oauth_services': 'scitokens',
     }
-    condor_x509_auth = {
-        'getenv': 'X509_USER_PROXY, KRB5CNAME'
-    }
-    if args.auth_type == 'x509':
-        condorcmds = dict(base_condorcmds | condor_x509_auth)
-    elif args.auth_type == 'igwn':
+    if args.auth_type == 'igwn':
         condorcmds = dict(base_condorcmds | condor_igwn_auth)
     elif args.auth_type == 'scitoken':
         condorcmds = dict(base_condorcmds | condor_apissuer_auth)
